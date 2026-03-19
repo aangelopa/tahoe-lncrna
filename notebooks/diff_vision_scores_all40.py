@@ -1,9 +1,4 @@
 """
-Differential Vision Score Computation — SLURM Array Version
-=============================================================
-Each SLURM job processes GROUPS_PER_JOB (plate, cell_line) groups.
-
-Optimised MC loop — ONE model call per sample covers ALL groups in the job:
 
 FOR each of 100 MC samples:
     1. For every group, subsample 100 cells per drug + 100 DMSO cells
@@ -16,12 +11,9 @@ FOR each of 100 MC samples:
 AFTER 100 samples:
     Median across samples → final scores per group
 
-This gives 100 model calls per job instead of 40 groups × 100 = 4,000.
-
-Usage:
-    python differential_vision_scores_slurm.py --job_id 0
-    python differential_vision_scores_slurm.py --merge
 """
+
+
 
 import argparse
 import torch
@@ -32,9 +24,8 @@ import scvi.hub
 from pathlib import Path
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # CONFIGURATION
-# ─────────────────────────────────────────────────────────────────────────────
 
 BASE_DIR       = Path.home() / "Thesis"
 DATA_DIR       = BASE_DIR / "Data"
@@ -56,15 +47,14 @@ DRUG_COL       = "drug"
 
 MIN_CELLS      = 50
 N_MC_SAMPLES   = 100
-CELLS_PER_CAT  = 100     # cells sampled per drug/DMSO category per MC sample
-GROUPS_PER_JOB = 40      # 674 groups / 40 = 17 jobs
+CELLS_PER_CAT  = 100     
+GROUPS_PER_JOB = 40      
 LIBRARY_SIZE   = 10e4
 LOG_EPS        = 1e-6
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # FUNCTIONS
-# ─────────────────────────────────────────────────────────────────────────────
 
 def load_model(cache_dir):
     print("Loading Tahoe SCVI model...")
@@ -98,10 +88,7 @@ def load_gene_sets(gene_set_file, var_names):
 
 
 def build_group_list(obs):
-    """
-    Return sorted list of (plate, cell_line) tuples with at least one
-    valid drug comparison (drug >= MIN_CELLS and DMSO >= MIN_CELLS).
-    """
+
     valid_groups = []
     for (plate, cell_line), grp in obs.groupby(
         [PLATE_COL, CELL_LINE_COL], observed=True
@@ -119,10 +106,7 @@ def build_group_list(obs):
 
 
 def vision_scores_from_expr(norm_expr, gene_sets, gene_index, log_eps):
-    """
-    norm_expr  : np.ndarray (n_cells, n_genes)
-    Returns    : np.ndarray (n_cells, n_gene_sets)
-    """
+ 
     log_expr  = np.log(norm_expr.astype(np.float32) + log_eps)
     set_names = list(gene_sets.keys())
     scores    = np.full(
@@ -135,14 +119,11 @@ def vision_scores_from_expr(norm_expr, gene_sets, gene_index, log_eps):
     return scores, set_names
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CORE: process one job (GROUPS_PER_JOB groups, 100 model calls total)
-# ─────────────────────────────────────────────────────────────────────────────
 
 def process_job(job_id):
     PARTIAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ── Load model, AnnData, gene sets once per job ───────────────────────────
+    
     model = load_model(CACHE_DIR)
 
     print(f"Loading AnnData from {DATA_PATH}...")
@@ -170,7 +151,7 @@ def process_job(job_id):
     print(f"\nJob {job_id}: groups {start_group}–{end_group - 1} "
           f"({end_group - start_group} groups)")
 
-    # ── Identify which groups still need processing ───────────────────────────
+
     pending = []
     for group_id in range(start_group, end_group):
         partial_path = PARTIAL_DIR / f"group_{group_id:04d}.parquet"
@@ -185,10 +166,8 @@ def process_job(job_id):
 
     print(f"  Groups to process: {len(pending)}")
 
-    # ── Build per-group metadata (cell positions, drug names etc.) ────────────
-    # This is computed once here and reused across all 100 MC samples
     print("\nPreparing group metadata...")
-    group_meta = []   # list of dicts, one per pending group
+    group_meta = []   
 
     for group_id in pending:
         plate, cell_line = valid_groups[group_id]
@@ -241,7 +220,7 @@ def process_job(job_id):
         print("No valid groups to process.")
         return
 
-    # ── MC LOOP: 100 iterations, ONE model call per iteration ─────────────────
+    
     print(f"\nStarting {N_MC_SAMPLES} MC samples across {len(group_meta)} groups...")
     print(f"  One model call per sample covers all groups simultaneously.")
 
@@ -306,7 +285,7 @@ def process_job(job_id):
             drug_mean = scores_all[start:end, :].mean(axis=0)
             gm["mc_diff"][s, d_idx, :] = drug_mean - dmso_means[g_idx]
 
-    # ── Save results for each group ───────────────────────────────────────────
+    
     print("\nSaving results...")
     for gm in group_meta:
         diff_scores  = np.median(gm["mc_diff"], axis=0)   # (n_comp, n_sets)
@@ -325,10 +304,7 @@ def process_job(job_id):
 
     print(f"\nJob {job_id} complete.")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # MERGE
-# ─────────────────────────────────────────────────────────────────────────────
 
 def merge_groups():
     print("Merging partial group files...")
@@ -343,9 +319,7 @@ def merge_groups():
     print(f"Saved to: {OUTPUT_SCORES}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
