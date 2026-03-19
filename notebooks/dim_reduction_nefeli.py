@@ -1,20 +1,17 @@
 """
-Full Pipeline: Parquet → Matrix → PCA → t-SNE + NNMDS
-======================================================
-Input:  Directory of parquet files (group_XXXX.parquet)
-        rows = comparisons: 'drug | plate | cell_line'
-        cols = 4,527 gene sets (differential Vision scores)
+Pipeline: Parquet → Matrix → PCA → t-SNE + NNMDS
 
-Output: tsne_embedding.npy    (N, 2)
-        nnmds_embedding.npy   (N, 2)
-        metadata.parquet      (N rows: drug, plate, cell_line)
+Input:  parquet files 
+        rows = comparisons: 'drug | plate | cell_line'
+        cols = gene sets (differential Vision scores)
+
+Output: tsne_embedding.npy    
+        nnmds_embedding.npy  
+        metadata.parquet      
         embeddings_overview.pdf
 
 Notes:
-  - Plate 14 is excluded for visualization (replication of plate 6)
-  - PCA uses cuML (GPU-accelerated)
-  - t-SNE uses cuML with default parameters
-  - NNMDS follows Canzar et al. 2024, with hidden = 10 * input_dim
+  - Plate 14 is excluded (replication of plate 6)
 """
 
 import numpy as np
@@ -29,9 +26,9 @@ import os
 import glob
 import time
 
-# ─────────────────────────────────────────────
+
 # CONFIGURATION
-# ─────────────────────────────────────────────
+
 DATA_DIR    = "/home/a/aangelopa/Thesis/Data/diff_vision_chunks"
 OUTPUT_DIR  = "/home/a/aangelopa/Thesis/Data/dim_reduction"
 
@@ -80,9 +77,9 @@ print(f"  Gene sets        : {scores_df.shape[1]}")
 print(f"  NaN count        : {scores_df.isna().sum().sum()}")
 print(f"  dtype            : {scores_df.dtypes.unique()}")
 
-# ─────────────────────────────────────────────
-# 2. PARSE METADATA FROM INDEX
-# ─────────────────────────────────────────────
+
+# 2. METADATA 
+
 print("\n" + "=" * 60)
 print("STEP 2: Parsing metadata")
 print("=" * 60)
@@ -100,9 +97,9 @@ print(f"  Unique plates    : {metadata['plate'].nunique()}")
 print(f"  Unique cell lines: {metadata['cell_line'].nunique()}")
 print(f"  Plates present   : {sorted(metadata['plate'].unique())}")
 
-# ─────────────────────────────────────────────
-# 3. EXCLUDE PLATE 14 (replication plate)
-# ─────────────────────────────────────────────
+
+# 3. EXCLUDE PLATE 14 
+
 print("\n" + "=" * 60)
 print("STEP 3: Excluding replication plate")
 print("=" * 60)
@@ -121,14 +118,14 @@ meta_out = os.path.join(OUTPUT_DIR, "metadata.parquet")
 metadata.to_parquet(meta_out)
 print(f"  Metadata saved → {meta_out}")
 
-# Save gene set names for reference
+# Save gene set names 
 geneset_out = os.path.join(OUTPUT_DIR, "gene_set_names.txt")
 with open(geneset_out, "w") as f:
     for name in scores_df.columns:
         f.write(name + "\n")
 print(f"  Gene set names saved → {geneset_out}")
 
-# Convert to numpy
+
 scores = np.nan_to_num(scores_df.values.astype(np.float32), nan=0.0)
 n_comparisons, n_genesets = scores.shape
 del scores_df
@@ -136,9 +133,9 @@ print(f"  Matrix: {n_comparisons} comparisons × {n_genesets} gene sets")
 
 print(f"\n  Step 1-3 took {time.time() - t0:.1f}s")
 
-# ─────────────────────────────────────────────
+
 # 4. PCA (cuML, GPU-accelerated)
-# ─────────────────────────────────────────────
+
 print("\n" + "=" * 60)
 print("STEP 4: PCA (cuML GPU)")
 print("=" * 60)
@@ -162,7 +159,7 @@ ev = cp.asnumpy(pca.explained_variance_ratio_).cumsum()
 print(f"  Variance explained by {N_PCS_TSNE}  PCs: {ev[N_PCS_TSNE-1]*100:.1f}%")
 print(f"  Variance explained by {N_PCS_NNMDS} PCs: {ev[N_PCS_NNMDS-1]*100:.1f}%")
 
-# Save explained variance for reference
+
 np.save(os.path.join(OUTPUT_DIR, "pca_explained_variance.npy"), ev)
 
 pcs_tsne  = pcs_all[:, :N_PCS_TSNE].astype(np.float32)
@@ -171,9 +168,9 @@ del pcs_all
 
 print(f"  PCA took {time.time() - t1:.1f}s")
 
-# ─────────────────────────────────────────────
+
 # 5. t-SNE (cuML GPU)
-# ─────────────────────────────────────────────
+
 print("\n" + "=" * 60)
 print("STEP 5: t-SNE (cuML GPU)")
 print("=" * 60)
@@ -193,9 +190,9 @@ np.save(os.path.join(OUTPUT_DIR, "tsne_embedding.npy"), tsne_embedding)
 print(f"  Saved → tsne_embedding.npy  shape: {tsne_embedding.shape}")
 print(f"  t-SNE took {time.time() - t2:.1f}s")
 
-# ─────────────────────────────────────────────
-# 6. NNMDS (PyTorch)
-# ─────────────────────────────────────────────
+
+# 6. NNMDS 
+
 print("\n" + "=" * 60)
 print("STEP 6: NNMDS (Neural Network MDS)")
 print("=" * 60)
@@ -204,8 +201,8 @@ t3 = time.time()
 
 class NNMDS(nn.Module):
     """
-    Neural Network Multidimensional Scaling (Canzar et al. 2024).
-    Hidden layer width = 10 * input_dim (modified from original).
+    (Canzar et al. 2024).
+    Hidden layer width = 10 * input_dim 
     """
     def __init__(self, input_dim, output_dim=2):
         super().__init__()
@@ -286,16 +283,16 @@ np.save(os.path.join(OUTPUT_DIR, "nnmds_loss.npy"), np.array(loss_history))
 print(f"  Saved → nnmds_embedding.npy  shape: {nnmds_embedding.shape}")
 print(f"  NNMDS took {time.time() - t3:.1f}s")
 
-# ─────────────────────────────────────────────
+
 # 7. VISUALIZATION
-# ─────────────────────────────────────────────
+
 print("\n" + "=" * 60)
 print("STEP 7: Generating plots")
 print("=" * 60)
  
 metadata = pd.read_parquet(os.path.join(OUTPUT_DIR, "metadata.parquet"))
  
-# color map for a categorical variable ---
+# color map
 def make_color_map(values):
     unique_vals = sorted(set(values))
     n = len(unique_vals)
@@ -308,7 +305,7 @@ def make_color_map(values):
     pt_colors = np.array([color_map[v] for v in values])
     return unique_vals, color_map, pt_colors
  
-# ─── Figure 1: Colored by CELL LINE ───
+#  by CELL LINE
 print("  Plotting by cell line...")
 unique_cls, cl_color, pt_colors_cl = make_color_map(metadata["cell_line"].values)
  
@@ -343,7 +340,7 @@ plt.savefig(out1, dpi=150, bbox_inches="tight")
 plt.close()
 print(f"  Saved → {out1}")
  
-# ─── Figure 2: Colored by DRUG ───
+#  by DRUG 
 print("  Plotting by drug...")
 unique_drugs, drug_color, pt_colors_drug = make_color_map(metadata["drug"].values)
  
@@ -374,9 +371,9 @@ plt.savefig(out2, dpi=150, bbox_inches="tight")
 plt.close()
 print(f"  Saved → {out2}")
  
-# ─────────────────────────────────────────────
+
 # SUMMARY
-# ─────────────────────────────────────────────
+
 total_time = time.time() - t0
 print("\n" + "=" * 60)
 print("DONE")
