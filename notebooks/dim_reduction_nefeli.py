@@ -44,9 +44,8 @@ EXCLUDE_PLATE = "14"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# ─────────────────────────────────────────────
-# 1. MERGE ALL PARQUET FILES
-# ─────────────────────────────────────────────
+# 1. MERGE ALL PARQUET 
+
 print("=" * 60)
 print("STEP 1: Merging parquet files")
 print("=" * 60)
